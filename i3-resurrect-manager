@@ -1,0 +1,49 @@
+#!/bin/bash
+# Enabling this will allow seeing what commands expand to. Nice to debug.
+# set -x
+
+launch_rofi() {
+	local rofi_options=(-dmenu -i -lines 3 -p "Workspaces to restore")
+	local launcher=(rofi "${rofi_options[@]}")
+	local menu_options=$(printf '%s\n' "${!workspaces[@]}" | sort)
+	local menu_options="All\n$menu_options\nNone\n"
+	rofi_selection="$(printf "$menu_options" | "${launcher[@]}")"
+}
+
+fetch_current_workspaces() {
+	local filter_ws_name_sed_regex="s/Workspace\s(.+)\s(layout|programs)/\1/I"
+
+	while read -r workspace; do
+		workspaces["$workspace"]="i3-resurrect restore -w $workspace"
+	done < <(i3-resurrect ls workspaces | sed -r "$filter_ws_name_sed_regex")
+}
+
+declare -A workspaces
+fetch_current_workspaces
+rofi_selection=""
+launch_rofi
+
+if [[ -n "$rofi_selection" ]]; then
+	if [[ "$rofi_selection" == "None" ]]; then
+		exit 1
+	fi
+
+	if [[ "$rofi_selection" == "All" ]]; then
+		for workspace in "${!workspaces[@]}"; do
+			i3-resurrect restore -w "$workspace"
+		done
+
+		exit 0
+	fi
+
+	if [[ -v "workspaces[$rofi_selection]" ]]; then
+		exec ${workspaces[${rofi_selection}]}
+		exit 0
+	fi
+
+	IFS=' ' read -ra split_selection <<< "$rofi_selection"
+	for selection in "${split_selection[@]}"; do
+		i3-resurrect restore -w "$selection"
+	done
+	exit 0
+fi
